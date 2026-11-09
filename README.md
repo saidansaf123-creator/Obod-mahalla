@@ -59,3 +59,15 @@ static/css/app.css   Классик тўқ услуб
 static/js/app.js     Меню, рўйхатлар, батафсил панеллар, графиклар
 data/                Манба файллар ва бирлаштирилган Excel
 ```
+
+## Railway'га жойлаш
+
+`railway.json` ҳар ишга тушишда: `migrate` → `collectstatic` → `import_excel --no-excel` → `gunicorn`.
+База ҳар деплойда `data/` даги Excel файллардан қайта тўлдирилади.
+
+Railway → Variables: `SECRET_KEY` (узун тасодифий матн). `DEBUG` бермаслик (ёки `False`).
+Домен ва HTTPS созламалари автоматик (`RAILWAY_PUBLIC_DOMAIN`).
+
+**Маълумот янгиланганда:** `data/` даги Excel файлни янгисига алмаштиринг (номи ўзгарса ҳам бўлади —
+«TrLoad», «илова», «Обод» сўзлари бўйича топилади), кейин `git add data && git commit -m "..." && git push`.
+Railway ўзи қайта деплой қилади ва сайт янги маълумотни кўрсатади.

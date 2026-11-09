@@ -8,3 +8,6 @@ media/*
 !media/.gitkeep
 .vscode/
 .idea/
+
+# Excel очиқ турганда пайдо бўладиган вақтинчалик файллар
+~$*

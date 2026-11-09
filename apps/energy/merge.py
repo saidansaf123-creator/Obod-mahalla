@@ -25,6 +25,25 @@ FILES = {
     "trload": "TrLoadProfileReport(2).xlsx",
     "program": "илова 2., 138 млрд (2) (2).xlsx",
 }
+# Файл номи ўзгарса ҳам топилсин: аниқ ном бўлмаса, шу белги бўйича энг янги файл олинади
+PATTERNS = {
+    "obod": ("обод",),
+    "trload": ("trload",),
+    "program": ("илова",),
+}
+
+
+def find_file(data_dir, kind):
+    data_dir = Path(data_dir)
+    exact = data_dir / FILES[kind]
+    if exact.exists():
+        return exact
+    found = [p for p in data_dir.glob("*.xls*")
+             if not p.name.startswith("~$") and "бирлаштир" not in p.name.lower()
+             and all(w in p.name.lower() for w in PATTERNS[kind])]
+    if not found:
+        raise FileNotFoundError(f"data/ папкасида «{FILES[kind]}» (ёки шунга ўхшаш номли) файл топилмади")
+    return max(found, key=lambda p: p.stat().st_mtime)
 
 # РЭС (тизимдаги ном) -> (кирилл, лотин)
 RES = {
@@ -322,9 +341,9 @@ def read_obod(path):
 # ---------------------------------------------------------------- бирлаштириш
 def merge(data_dir):
     data_dir = Path(data_dir)
-    trload, date = read_trload(data_dir / FILES["trload"])
-    works, order, summary = read_program(data_dir / FILES["program"])
-    obod = read_obod(data_dir / FILES["obod"])
+    trload, date = read_trload(find_file(data_dir, "trload"))
+    works, order, summary = read_program(find_file(data_dir, "program"))
+    obod = read_obod(find_file(data_dir, "obod"))
     notes = []
 
     by_key = {}
