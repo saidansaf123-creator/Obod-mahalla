@@ -1,0 +1,61 @@
+{% load static assets %}<!DOCTYPE html>
+<html lang="uz-Cyrl" class="js">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Обод маҳалла · Тошкент шаҳар электр тармоқлари</title>
+  <meta name="description" content="Тошкент шаҳри туманлари, маҳаллалари ва трансформатор пунктлари бўйича электр тармоқлари мониторинги">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=PT+Serif:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% asset 'css/app.css' %}">
+  <link rel="icon" type="image/jpeg" href="{% asset 'img/logo.jpg' %}">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <a href="#/home" class="brand">
+        <span class="brand__mark"><img src="{% asset 'img/logo.jpg' %}" alt="Логотип"></span>
+        <span class="brand__text"><span><b>Обод</b> маҳалла</span><small>Тошкент шаҳар электр тармоқлари</small></span>
+      </a>
+
+      <nav class="menu" aria-label="Асосий меню">
+        <div class="menu__label">Бўлимлар</div>
+        <a href="#/home" class="menu__item" data-nav="home"><i data-lucide="layout-dashboard"></i><span>Бош саҳифа</span></a>
+        <a href="#/districts" class="menu__item" data-nav="districts"><i data-lucide="map"></i><span>Туманлар</span><em data-count="districts"></em></a>
+        <a href="#/mahallas" class="menu__item" data-nav="mahallas"><i data-lucide="house"></i><span>Маҳаллалар</span><em data-count="mahallas"></em></a>
+        <a href="#/tps" class="menu__item" data-nav="tps"><i data-lucide="zap"></i><span>Трансформаторлар</span><em data-count="tps"></em></a>
+        <a href="#/goals" class="menu__item" data-nav="goals"><i data-lucide="target"></i><span>Мақсадлар</span><em data-count="goals"></em></a>
+      </nav>
+
+      <div class="side-health" data-side-health></div>
+
+      <div class="side-foot">
+        <span>Манбалар: Обод файли, тизим ҳисоботи, 2027 дастури</span>
+        <span>Меъёр: ГОСТ 32144 (230 В ±5%)</span>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <nav class="crumbs" data-crumbs aria-label="Йўл"></nav>
+        <div class="search" data-search>
+          <i data-lucide="search" class="search__icon"></i>
+          <input type="search" class="search__input" placeholder="Туман, маҳалла ёки ТП рақами…" autocomplete="off"
+                 aria-label="Қидириш" data-search-input>
+          <kbd>/</kbd>
+          <div class="search__results" data-search-results hidden></div>
+        </div>
+      </header>
+      <section class="view" data-view>
+        <div class="boot"><div class="boot__spin"></div><span>Маълумотлар юкланмоқда…</span></div>
+      </section>
+    </div>
+  </div>
+
+  {% json_data payload "app-data" %}
+  <script src="{% asset 'vendor/lucide.min.js' %}"></script>
+  <script src="{% asset 'vendor/chart.umd.min.js' %}"></script>
+  <script src="{% asset 'js/app.js' %}"></script>
+</body>
+</html>
