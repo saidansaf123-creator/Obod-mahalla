@@ -1,7 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py import_excel --no-excel && gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 120",
+    "startCommand": "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py import_excel && (python manage.py createsuperuser --noinput || true) && gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 120",
     "healthcheckPath": "/",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",

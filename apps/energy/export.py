@@ -1,273 +1,220 @@
-"""Бирлаштирилган маълумотлар Excel файлини тузиш."""
-import datetime
+"""Сайтдан юклаб олинадиган Excel: тозаланган (такрорсиз) ишлар, ТП секциялари ва жамлар формулалар билан."""
+from io import BytesIO
 
+from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .merge import CATEGORIES, FILES, RES
-from .models import District, Goal, Mahalla, Transformer
+from .models import District, Mahalla, ProgressEntry, Section, SourceInfo, Work
+from .source import CATEGORIES
 
-FONT = "Arial"
-F_BASE = Font(name=FONT, size=10)
-F_BOLD = Font(name=FONT, size=10, bold=True)
-F_HEAD = Font(name=FONT, size=10, bold=True, color="FFFFFF")
-F_TITLE = Font(name=FONT, size=14, bold=True)
-F_NOTE = Font(name=FONT, size=9, italic=True, color="555555")
+F_BASE = Font(name="Arial", size=10)
+F_BOLD = Font(name="Arial", size=10, bold=True)
+F_HEAD = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+F_TITLE = Font(name="Arial", size=13, bold=True)
+F_INPUT = Font(name="Arial", size=10, color="0000FF")
 FILL_HEAD = PatternFill("solid", fgColor="1F2937")
 FILL_TOTAL = PatternFill("solid", fgColor="E5E7EB")
+FILL_INPUT = PatternFill("solid", fgColor="FFF9C4")
 FILL_STATUS = {"good": PatternFill("solid", fgColor="DCFCE7"), "warn": PatternFill("solid", fgColor="FEF3C7"),
                "crit": PatternFill("solid", fgColor="FEE2E2")}
-THIN = Side(style="thin", color="D1D5DB")
-TOP = Border(top=Side(style="medium", color="111827"))
-STATUS_UZ = {"good": "Яшил", "warn": "Сариқ", "crit": "Қизил"}
-PRIO_UZ = {"high": "Юқори", "medium": "Ўрта", "low": "Паст"}
+STATUS_UZ = {"good": "Яшил", "warn": "Сариқ", "crit": "Қизил", "none": "Маълумот йўқ"}
+THIN = Border(bottom=Side(style="thin", color="D1D5DB"))
+NUM2 = '#,##0.00;-#,##0.00;"-"'
+NUM1 = '#,##0.0;-#,##0.0;"-"'
+NUM0 = '#,##0;-#,##0;"-"'
+PCT = '0.0%;-0.0%;"-"'
 
-S_DIST, S_MAH, S_TP, S_WORK, S_FIX, S_INFO = ("Туманлар", "Маҳаллалар", "ТП лар", "Дастур ишлари",
-                                               "Тузатишлар", "Маълумот")
-
-
-def q(sheet):
-    return f"'{sheet}'"
+S_INFO, S_DIST, S_MAH, S_WORK, S_TP = "Маълумот", "Туманлар", "Маҳаллалар", "Ишлар", "ТП секциялари"
 
 
-def _table(ws, headers, widths, start_row=1):
-    for j, (h, w) in enumerate(zip(headers, widths), start=1):
-        c = ws.cell(row=start_row, column=j, value=h)
+def q(name):
+    return f"'{name}'"
+
+
+def _table(ws, head, widths):
+    for i, (h, w) in enumerate(zip(head, widths), start=1):
+        c = ws.cell(row=1, column=i, value=h)
         c.font, c.fill = F_HEAD, FILL_HEAD
-        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        ws.column_dimensions[get_column_letter(j)].width = w
-    ws.row_dimensions[start_row].height = 32
-    ws.freeze_panes = ws.cell(row=start_row + 1, column=1)
+        c.alignment = Alignment(wrap_text=True, vertical="center")
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.row_dimensions[1].height = 42
+    ws.freeze_panes = "A2"
 
 
-def _fmt_row(ws, row, formats):
-    for j, f in formats.items():
-        ws.cell(row=row, column=j).number_format = f
+def _row(ws, r, vals, fmts=None):
+    for j, v in enumerate(vals, start=1):
+        c = ws.cell(row=r, column=j, value=v)
+        c.font, c.border = F_BASE, THIN
+        if fmts and fmts.get(j):
+            c.number_format = fmts[j]
 
 
-def _style_body(ws, first, last, ncols):
-    for r in ws.iter_rows(min_row=first, max_row=last, max_col=ncols):
-        for c in r:
-            c.font = F_BASE
-            c.border = Border(bottom=THIN)
-
-
-def _total_row(ws, row, ncols, label_col=1, label="ЖАМИ"):
-    ws.cell(row=row, column=label_col, value=label)
-    for j in range(1, ncols + 1):
-        c = ws.cell(row=row, column=j)
-        c.font, c.fill, c.border = F_BOLD, FILL_TOTAL, TOP
-
-
-def export_workbook(path, merged):
+def build_workbook():
     wb = Workbook()
-    districts = list(District.objects.all())
-    tps = list(Transformer.objects.select_related("district", "mahalla").order_by(
-        "district__name_cyr", "mahalla__name_cyr", "number"))
-    goals = {g.mahalla_id: g for g in Goal.objects.all()}
-    mahallas = list(Mahalla.objects.select_related("district").order_by("district__name_cyr", "name_cyr"))
+    src = SourceInfo.objects.first()
+    works = list(Work.objects.select_related("district", "mahalla"))
+    secs = list(Section.objects.select_related("district", "mahalla", "work"))
 
-    # ---------------------------------------------------------------- ТП лар
+    # ------------------------------------------------------------- Ишлар
     ws = wb.active
-    ws.title = S_TP
-    head = ["№", "Туман", "Маҳалла", "ТП рақами", "Подстанция", "Фидер", "Эгаси", "Жами истеъмолчи",
-            "Аҳоли", "Улгуржи", "Қувват, кВА", "Кунлик истеъмол, кВт·соат", "Ойлик истеъмол, кВт·соат",
-            "Йиллик истеъмол, кВт·соат", "Кучланиш А, В", "Кучланиш Б, В", "Кучланиш С, В", "Ток А, А",
-            "Ток Б, А", "Ток С, А", "cos φ", "Юкланиш", "Ҳақиқий юклама, кВА", "Ҳисоблагич ҳолати",
-            "Саломатлик индекси", "Ҳолат", "Асосий муаммо", "2027 дастурида", "Обод файлида",
-            "Эски туман (Обод файли)", "Эски маҳалла (Обод файли)", "Маҳалла манбаси"]
-    widths = [6, 15, 20, 13, 30, 22, 10, 11, 9, 9, 10, 13, 14, 15, 10, 10, 10, 9, 9, 9, 8, 10, 12, 22,
-              11, 14, 30, 11, 10, 16, 20, 34]
-    _table(ws, head, widths)
-    r = 1
-    for i, t in enumerate(tps, start=1):
-        r = i + 1
-        rep = t.report
-        src = ("2.1-илова: маҳалла ишлари рўйхатида ТП тилга олинган" if t.in_program
-               else "Аниқланмади — ТП дастурда тилга олинмаган")
-        vals = [i, t.district.name_cyr, t.mahalla.name_cyr if t.mahalla else "Аниқланмаган", t.number,
-                t.substation, t.feeder, t.owner, t.consumers_total, t.consumers_household,
-                t.consumers_commercial, t.capacity_kva, t.daily_kwh, f"=IF(L{r}=\"\",\"\",L{r}*30)",
-                f"=IF(M{r}=\"\",\"\",M{r}*12)", t.voltage_a, t.voltage_b, t.voltage_c, t.current_a, t.current_b,
-                t.current_c, t.pf, t.load_factor, f"=IF(V{r}=\"\",\"\",V{r}*K{r})", t.meter_state, rep.score,
-                STATUS_UZ[rep.status], rep.issues[0].title if rep.issues else "—",
-                "Ҳа" if t.in_program else "Йўқ", "Ҳа" if t.in_obod else "Йўқ", t.obod_district, t.obod_mahalla,
-                src]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=r, column=j, value=v)
-        ws.cell(row=r, column=26).fill = FILL_STATUS[rep.status]
-    last = r
-    _style_body(ws, 2, last, len(head))
-    for rr in range(2, last + 2):
-        _fmt_row(ws, rr, {8: "#,##0", 9: "#,##0", 10: "#,##0", 11: "#,##0", 12: "#,##0.0", 13: "#,##0",
-                          14: "#,##0", 15: "0.0", 16: "0.0", 17: "0.0", 18: "0.0", 19: "0.0", 20: "0.0",
-                          21: "0.000", 22: "0.0%", 23: "#,##0.0"})
-    tot = last + 1
-    _total_row(ws, tot, len(head), label_col=2)
-    for col in "HIJKLMNW":
-        ws[f"{col}{tot}"] = f"=SUM({col}2:{col}{last})"
-    ws[f"V{tot}"] = f"=IFERROR(W{tot}/K{tot},0)"
-    ws[f"V{tot}"].comment = Comment("Қувват бўйича ўртача юкланиш: жами ҳақиқий юклама / жами қувват", "Обод маҳалла")
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(head))}{last}"
-    ws["L1"].comment = Comment("Манфий/нол қиймат — ҳисоблагич хатоси (манбадагидек қолдирилган).", "Обод маҳалла")
-    ws["O1"].comment = Comment("А/Б/С — тизим ҳисоботидаги L1/L2/L3 сарлавҳалари бўйича.", "Обод маҳалла")
-
-    # ---------------------------------------------------------------- Дастур ишлари
-    ws = wb.create_sheet(S_WORK)
-    head = ["№", "Туман", "Маҳалла", "Иш номи", "Йўналиш", "Ўлчов бирлиги", "Миқдори", "Нархи, млн сўм",
-            "Тегишли ТП лар", "2.1-илова қатори"]
-    _table(ws, head, [6, 15, 20, 70, 30, 12, 10, 13, 18, 10])
-    r = 1
-    for i, w in enumerate(merged.works, start=1):
-        r = i + 1
-        vals = [i, RES[w.res][0], w.mahalla, w.title, CATEGORIES[w.kind][0], w.unit, w.quantity, w.cost,
-                ", ".join(w.tps), w.row]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=r, column=j, value=v)
-        ws.cell(row=r, column=4).alignment = Alignment(wrap_text=True, vertical="top")
-    wlast = r
-    _style_body(ws, 2, wlast, len(head))
-    for rr in range(2, wlast + 2):
-        _fmt_row(ws, rr, {7: "#,##0.00", 8: "#,##0.00"})
+    ws.title = S_WORK
+    head = ["Туман", "Маҳалла", "№", "Бажариладиган ишлар", "ТП (C)", "Тоифа", "Паст кучл. кабел, км",
+            "Юқори кучл. кабел, км", "Жами км", "Трансформатор алмаштириш", "Янги ГКТП", "Жами трансформатор",
+            "ГРШ", "Маблағ, млн сўм", "Амалда: паст кабел, км", "Амалда: юқори кабел, км", "Амалда: трансформатор",
+            "Амалда: ГКТП", "Амалда: ГРШ", "Амалда: маблағ, млн сўм", "Маблағ ижроси", "Файл қаторлари"]
+    _table(ws, head, [14, 18, 5, 70, 8, 26, 10, 10, 9, 11, 9, 11, 7, 12, 10, 10, 10, 9, 8, 12, 9, 11])
+    ws.cell(row=1, column=15).comment = Comment("Сариқ устунлар — ижро (амалда) учун киритиладиган катаклар; "
+                                                "бошланғич қиймат 0.", "Обод маҳалла")
+    for i, w in enumerate(works, start=2):
+        vals = [w.district.name, w.mahalla.name, w.number, w.text, w.tp_ref, CATEGORIES[w.category][0],
+                w.lv_km, w.hv_km, f"=G{i}+H{i}", w.tr_upgrade, w.new_gktp, f"=J{i}+K{i}", w.grsh, w.cost,
+                w.fact_lv_km, w.fact_hv_km, w.fact_tr_upgrade, w.fact_new_gktp, w.fact_grsh, w.fact_cost,
+                f'=IFERROR(T{i}/N{i},"")', ", ".join(map(str, w.rows))]
+        _row(ws, i, vals, {7: NUM2, 8: NUM2, 9: NUM2, 14: NUM2, 15: NUM2, 16: NUM2, 20: NUM2, 21: PCT})
+        ws.cell(row=i, column=4).alignment = Alignment(wrap_text=True, vertical="top")
+        for j in range(15, 21):
+            ws.cell(row=i, column=j).font, ws.cell(row=i, column=j).fill = F_INPUT, FILL_INPUT
+    wlast = len(works) + 1
     tot = wlast + 1
-    _total_row(ws, tot, len(head), label_col=2)
-    ws[f"H{tot}"] = f"=SUM(H2:H{wlast})"
-    ws.auto_filter.ref = f"A1:J{wlast}"
+    ws.cell(row=tot, column=4, value="ЖАМИ (ҳар бир иш бир марта)").font = F_BOLD
+    for j in list(range(7, 21)):
+        col = get_column_letter(j)
+        c = ws.cell(row=tot, column=j, value=f"=SUM({col}2:{col}{wlast})")
+        c.font, c.fill, c.number_format = F_BOLD, FILL_TOTAL, NUM2
+    ws.cell(row=tot, column=21, value=f'=IFERROR(T{tot}/N{tot},"")').number_format = PCT
+    ws.auto_filter.ref = f"A1:V{wlast}"
 
-    # ---------------------------------------------------------------- Маҳаллалар (формулалар)
+    # ------------------------------------------------------------- ТП секциялари
+    ws = wb.create_sheet(S_TP)
+    head = ["Туман", "Маҳалла", "Иш №", "Название РЭС", "Подстанция", "Фидер", "Номер ТП", "Tr Владелец",
+            "Мастер Тр", "Счётчиклар: всего", "Бытовые", "Промышленные", "Мощность, кВА", "Номер счетчика баланса",
+            "Коэф. КТ", "Среднесуточное, кВт·соат", "Вчера итого, кВА", "Всего, кВА", "PF", "PF L1", "PF L2",
+            "PF L3", "Ток L1, А", "Ток L2, А", "Ток L3, А", "Напряжение L1, В", "Напряжение L2, В",
+            "Напряжение L3, В", "Нагрузки ТП", "Состояние счетчика", "Примечание", "Ойлик, кВт·соат",
+            "Йиллик, кВт·соат", "Юкланиш (ҳисоб)", "Ҳолат", "Саломатлик индекси", "Файл қатори"]
+    _table(ws, head, [13, 16, 6, 16, 24, 18, 11, 10, 9, 10, 9, 10, 10, 15, 8, 12, 10, 10, 7, 7, 7, 7, 9, 9, 9,
+                      10, 10, 10, 9, 20, 30, 12, 13, 10, 10, 10, 8])
+    for i, s in enumerate(secs, start=2):
+        rep = s.report
+        st = rep.status if s.has_data else "none"
+        vals = [s.district.name, s.mahalla.name, s.work.number, s.res, s.substation, s.feeder, s.number, s.owner,
+                s.master, s.consumers_total, s.consumers_household, s.consumers_commercial, s.capacity_kva,
+                s.meter_no, s.ct_ratio, s.daily_kwh, s.kva_yesterday, s.kva_total, s.pf, s.pf_l1, s.pf_l2, s.pf_l3,
+                s.current_a, s.current_b, s.current_c, s.voltage_a, s.voltage_b, s.voltage_c, s.load_factor,
+                s.meter_state, s.note, f'=IF(P{i}="","",P{i}*30)', f'=IF(P{i}="","",P{i}*365)',
+                f'=IFERROR(R{i}/M{i},"")', STATUS_UZ[st], rep.score if s.has_data else None, s.row]
+        _row(ws, i, vals, {16: NUM2, 29: PCT, 32: NUM0, 33: NUM0, 34: PCT})
+        ws.cell(row=i, column=35).fill = FILL_STATUS.get(st, PatternFill())
+    slast = len(secs) + 1
+    ws.auto_filter.ref = f"A1:AK{slast}"
+
+    # ------------------------------------------------------------- Маҳаллалар
     ws = wb.create_sheet(S_MAH, 0)
-    head = ["Туман", "Маҳалла", "ТП сони", "Истеъмолчилар", "Қувват, кВА", "Кунлик истеъмол, кВт·соат",
-            "Юкланиш", "Ўртача саломатлик", "Ишлар сони", "Бюджет, млн сўм", "Мақсад (2027)", "Устуворлик"]
-    _table(ws, head, [15, 22, 9, 13, 12, 15, 10, 12, 10, 14, 60, 11])
-    T, W = q(S_TP), q(S_WORK)
-    r = 1
-    for i, m in enumerate(mahallas, start=1):
-        r = i + 1
-        g = goals.get(m.id)
-        crit = f"{T}!$B$2:$B${last},$A{r},{T}!$C$2:$C${last},$B{r}"
-        vals = [m.district.name_cyr, m.name_cyr,
-                f"=COUNTIFS({crit})",
-                f"=SUMIFS({T}!$H$2:$H${last},{crit})",
-                f"=SUMIFS({T}!$K$2:$K${last},{crit})",
-                f"=SUMIFS({T}!$L$2:$L${last},{crit},{T}!$L$2:$L${last},\">0\")",
-                f"=IFERROR(SUMIFS({T}!$W$2:$W${last},{crit})/E{r},\"\")",
-                f"=IFERROR(AVERAGEIFS({T}!$Y$2:$Y${last},{crit}),\"\")",
-                f"=COUNTIFS({W}!$B$2:$B${wlast},$A{r},{W}!$C$2:$C${wlast},$B{r})",
-                f"=SUMIFS({W}!$H$2:$H${wlast},{W}!$B$2:$B${wlast},$A{r},{W}!$C$2:$C${wlast},$B{r})",
-                g.title if g else "", PRIO_UZ.get(g.priority, "") if g else ""]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=r, column=j, value=v)
-    mlast = r
-    _style_body(ws, 2, mlast, len(head))
-    for rr in range(2, mlast + 2):
-        _fmt_row(ws, rr, {3: "#,##0", 4: "#,##0", 5: "#,##0", 6: "#,##0", 7: "0.0%", 8: "0", 9: "#,##0",
-                          10: "#,##0.00"})
+    W, T = q(S_WORK), q(S_TP)
+    head = ["Туман", "Маҳалла", "Ишлар", "Паст кабел, км", "Юқори кабел, км", "Трансформатор", "Янги ГКТП", "ГРШ",
+            "Маблағ, млн сўм", "Амалда маблағ", "Ижро", "ТП секциялари", "Истеъмолчилар", "Қувват, кВА",
+            "Ўртача юкланиш"]
+    _table(ws, head, [14, 20, 7, 10, 10, 11, 9, 7, 13, 12, 8, 9, 12, 11, 10])
+    mahs = list(Mahalla.objects.select_related("district"))
+    for i, m in enumerate(mahs, start=2):
+        crit = f"{W}!$A$2:$A${wlast},$A{i},{W}!$B$2:$B${wlast},$B{i}"
+        tcrit = f"{T}!$A$2:$A${slast},$A{i},{T}!$B$2:$B${slast},$B{i}"
+        vals = [m.district.name, m.name, f"=COUNTIFS({crit})",
+                f"=SUMIFS({W}!$G$2:$G${wlast},{crit})", f"=SUMIFS({W}!$H$2:$H${wlast},{crit})",
+                f"=SUMIFS({W}!$J$2:$J${wlast},{crit})", f"=SUMIFS({W}!$K$2:$K${wlast},{crit})",
+                f"=SUMIFS({W}!$M$2:$M${wlast},{crit})", f"=SUMIFS({W}!$N$2:$N${wlast},{crit})",
+                f"=SUMIFS({W}!$T$2:$T${wlast},{crit})", f'=IFERROR(J{i}/I{i},"")',
+                f"=COUNTIFS({tcrit})", f"=SUMIFS({T}!$J$2:$J${slast},{tcrit})",
+                f"=SUMIFS({T}!$M$2:$M${slast},{tcrit})",
+                f'=IFERROR(SUMIFS({T}!$R$2:$R${slast},{tcrit})/N{i},"")']
+        _row(ws, i, vals, {4: NUM2, 5: NUM2, 9: NUM2, 10: NUM2, 11: PCT, 13: NUM0, 14: NUM0, 15: PCT})
+    mlast = len(mahs) + 1
     tot = mlast + 1
-    _total_row(ws, tot, len(head))
-    for col in "CDEFIJ":
-        ws[f"{col}{tot}"] = f"=SUM({col}2:{col}{mlast})"
-    ws.auto_filter.ref = f"A1:L{mlast}"
+    ws.cell(row=tot, column=2, value="ЖАМИ").font = F_BOLD
+    for j in range(3, 15):
+        col = get_column_letter(j)
+        if j == 11:
+            ws.cell(row=tot, column=j, value=f'=IFERROR(J{tot}/I{tot},"")').number_format = PCT
+            continue
+        c = ws.cell(row=tot, column=j, value=f"=SUM({col}2:{col}{mlast})")
+        c.font, c.fill, c.number_format = F_BOLD, FILL_TOTAL, NUM2
+    ws.auto_filter.ref = f"A1:O{mlast}"
 
-    # ---------------------------------------------------------------- Туманлар
+    # ------------------------------------------------------------- Туманлар
     ws = wb.create_sheet(S_DIST, 0)
-    head = ["Туман", "РЭС (тизимда)", "ТП сони (тизим)", "Истеъмолчилар", "Аҳоли", "Улгуржи", "Қувват, кВА",
-            "Кунлик истеъмол, кВт·соат", "Ўртача юкланиш", "Муаммоли ТП", "Маҳаллалар (дастур)",
-            "Дастурдаги ТП", "Дастур ишлари", "Бюджет — ишлар йиғиндиси, млн сўм", "Бюджет — 2-илова, млн сўм",
-            "Фарқ, млн сўм"]
-    _table(ws, head, [15, 20, 11, 13, 12, 11, 12, 15, 11, 11, 12, 11, 11, 17, 17, 13])
+    head = ["Туман", "РЭС", "Маҳаллалар", "Ишлар", "Паст кабел, км", "Юқори кабел, км", "Трансформатор",
+            "Янги ГКТП", "ГРШ", "Маблағ, млн сўм", "Амалда маблағ", "Ижро", "ТП секциялари", "Истеъмолчилар"]
+    _table(ws, head, [15, 18, 11, 8, 10, 10, 11, 9, 7, 13, 12, 8, 9, 12])
     M = q(S_MAH)
-    r = 1
-    for i, d in enumerate(districts, start=1):
-        r = i + 1
-        s = d.system_stats
-        vals = [d.name_cyr, d.res_name, s.get("tp_count"), s.get("consumers"), s.get("household"),
-                s.get("commercial"), s.get("capacity_kva"), s.get("daily_kwh"), (s.get("load_pct") or 0) / 100,
-                s.get("problems"),
-                f"=COUNTIF({M}!$A$2:$A${mlast},$A{r})",
-                f"=COUNTIFS({T}!$B$2:$B${last},$A{r},{T}!$AB$2:$AB${last},\"Ҳа\")",
-                f"=COUNTIF({W}!$B$2:$B${wlast},$A{r})",
-                f"=SUMIF({W}!$B$2:$B${wlast},$A{r},{W}!$H$2:$H${wlast})",
-                d.budget_official, f"=O{r}-N{r}"]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=r, column=j, value=v)
-    dlast = r
-    _style_body(ws, 2, dlast, len(head))
-    for rr in range(2, dlast + 2):
-        _fmt_row(ws, rr, {3: "#,##0", 4: "#,##0", 5: "#,##0", 6: "#,##0", 7: "#,##0", 8: "#,##0",
-                          9: "0.0%", 10: "#,##0", 11: "#,##0", 12: "#,##0", 13: "#,##0", 14: "#,##0.00",
-                          15: "#,##0.00", 16: "#,##0.00;[Red]-#,##0.00"})
+    dists = list(District.objects.all())
+    for i, d in enumerate(dists, start=2):
+        crit = f"{W}!$A$2:$A${wlast},$A{i}"
+        vals = [d.name, d.res_name, f"=COUNTIF({M}!$A$2:$A${mlast},$A{i})", f"=COUNTIF({crit})",
+                f"=SUMIF({crit},{W}!$G$2:$G${wlast})", f"=SUMIF({crit},{W}!$H$2:$H${wlast})",
+                f"=SUMIF({crit},{W}!$J$2:$J${wlast})", f"=SUMIF({crit},{W}!$K$2:$K${wlast})",
+                f"=SUMIF({crit},{W}!$M$2:$M${wlast})", f"=SUMIF({crit},{W}!$N$2:$N${wlast})",
+                f"=SUMIF({crit},{W}!$T$2:$T${wlast})", f'=IFERROR(K{i}/J{i},"")',
+                f"=COUNTIF({T}!$A$2:$A${slast},$A{i})",
+                f"=SUMIF({T}!$A$2:$A${slast},$A{i},{T}!$J$2:$J${slast})"]
+        _row(ws, i, vals, {5: NUM2, 6: NUM2, 10: NUM2, 11: NUM2, 12: PCT, 14: NUM0})
+    dlast = len(dists) + 1
     tot = dlast + 1
-    _total_row(ws, tot, len(head))
-    for col in "CDEFGHJKLMNOP":
-        ws[f"{col}{tot}"] = f"=SUM({col}2:{col}{dlast})"
-    ws[f"I{tot}"] = f"=SUMPRODUCT(I2:I{dlast},G2:G{dlast})/G{tot}"
-    ws["C1"].comment = Comment(f"Тизим ҳисоботи ({merged.report_date}): қуввати > 0, виртуал ва ГРШ "
-                               "қаторларисиз барча трансформаторлар.", "Обод маҳалла")
-    ws["O1"].comment = Comment("Манба: «илова 2., 138 млрд» файли, «2 илова» варағи, 5-қатор.", "Обод маҳалла")
-    ws["P1"].comment = Comment("2-илова жами ва 2.1-илова манзилли рўйхати йиғиндиси орасидаги фарқ "
-                               "(манбанинг ўзида).", "Обод маҳалла")
-    note = ws.cell(row=tot + 2, column=1, value="Изоҳ: C–J устунлари тизим ҳисоботидан ҳисобланган қийматлар; "
-                                                  "K–N устунлари бошқа варақлардан формула орқали олинади.")
-    note.font = F_NOTE
+    ws.cell(row=tot, column=1, value="ЖАМИ").font = F_BOLD
+    for j in range(3, 15):
+        col = get_column_letter(j)
+        if j == 12:
+            ws.cell(row=tot, column=j, value=f'=IFERROR(K{tot}/J{tot},"")').number_format = PCT
+            continue
+        c = ws.cell(row=tot, column=j, value=f"=SUM({col}2:{col}{dlast})")
+        c.font, c.fill, c.number_format = F_BOLD, FILL_TOTAL, NUM2
 
-    # ---------------------------------------------------------------- Тузатишлар
-    ws = wb.create_sheet(S_FIX)
-    head = ["ТП рақами", "Эски туман", "Эски маҳалла", "Тўғри туман", "Тўғри маҳалла", "Натижа", "Асос",
-            "Обод файли: А / Б / С, В", "Тизим: А (L1) / Б (L2) / С (L3), В"]
-    _table(ws, head, [12, 15, 20, 15, 22, 16, 70, 24, 28])
-    rows = sorted(merged.obod_rows, key=lambda t: (RES[t.res][0], t.number))
-    r = 1
-    for i, t in enumerate(rows, start=1):
-        r = i + 1
-        new_m = t.mahalla_key[1] if t.mahalla_key else "Аниқланмаган"
-        basis = (f"Туман — тизим ҳисоботидаги РЭС «{t.res}»; маҳалла — 2.1-иловада ТП-{t.base_number} шу маҳалла "
-                 f"ишлари рўйхатида." if t.mahalla_key else
-                 f"Туман — тизим ҳисоботидаги РЭС «{t.res}»; ТП-{t.base_number} 2.1-иловада йўқ, маҳалла аниқланмади.")
-        ov = t.obod_voltages or (None, None, None)
-        vals = [t.number, t.obod_district, t.obod_mahalla, RES[t.res][0], new_m,
-                f"=IF(AND(B{r}=D{r},C{r}=E{r}),\"Ўзгармади\",IF(E{r}=\"Аниқланмаган\",\"Маҳалла аниқланмади\",\"Тузатилди\"))",
-                basis, " / ".join(f"{v:.1f}" for v in ov if v is not None),
-                " / ".join(f"{v:.1f}" if v is not None else "—" for v in (t.voltage_a, t.voltage_b, t.voltage_c))]
-        for j, v in enumerate(vals, start=1):
-            ws.cell(row=r, column=j, value=v)
-    _style_body(ws, 2, r, len(head))
-    ws.auto_filter.ref = f"A1:I{r}"
+    # ------------------------------------------------------------- Ижро журнали
+    ws = wb.create_sheet("Ижро журнали")
+    _table(ws, ["Сана", "Туман", "Маҳалла", "Иш №", "Иш", "Паст кабел, км", "Юқори кабел, км", "Трансформатор",
+                "Янги ГКТП", "ГРШ", "Маблағ, млн сўм", "Изоҳ", "Киритилган вақт"],
+           [11, 14, 18, 7, 50, 10, 10, 11, 9, 7, 12, 40, 17])
+    dname = {d.order: d.name for d in dists}
+    entries = list(ProgressEntry.objects.select_related("work__mahalla"))
+    for i, e in enumerate(entries, start=2):
+        _row(ws, i, [e.date, dname.get(e.district_order, ""), e.work.mahalla.name if e.work else "", e.number,
+                     e.work_title, e.lv_km, e.hv_km, e.tr_upgrade, e.new_gktp, e.grsh, e.cost, e.note,
+                     timezone.localtime(e.created_at).replace(tzinfo=None)],
+             {1: "DD.MM.YYYY", 11: NUM2, 13: "DD.MM.YYYY HH:MM"})
+    if entries:
+        tot = len(entries) + 2
+        ws.cell(row=tot, column=5, value="ЖАМИ").font = F_BOLD
+        for j in range(6, 12):
+            col = get_column_letter(j)
+            c = ws.cell(row=tot, column=j, value=f"=SUM({col}2:{col}{tot - 1})")
+            c.font, c.fill, c.number_format = F_BOLD, FILL_TOTAL, NUM2
 
-    # ---------------------------------------------------------------- Маълумот
+    # ------------------------------------------------------------- Маълумот
     ws = wb.create_sheet(S_INFO, 0)
-    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["A"].width = 26
     ws.column_dimensions["B"].width = 110
-    ws["A1"] = "Обод маҳалла — бирлаштирилган маълумотлар"
+    ws["A1"] = "«Обод маҳалла» 2027 — электр таъминоти манзилли дастури (тозаланган маълумотлар)"
     ws["A1"].font = F_TITLE
     lines = [
-        ("Тузилган сана", datetime.date.today().strftime("%d.%m.%Y")),
-        ("Манба 1", f"{FILES['obod']} — 205 ТП нинг техник маълумотлари (туман ва маҳалла номлари нотўғри бўлган)."),
-        ("Манба 2", f"{FILES['trload']} — тизим ҳисоботи, {merged.report_date}: {len(merged.trload)} та қатор."),
-        ("Манба 3", f"{FILES['program']} — 2027 йил «Обод маҳалла» дастури (2 ва 2.1-иловалар)."),
-        ("Туман", "Тизим ҳисоботидаги РЭС бўйича аниқланди."),
-        ("Маҳалла", "2.1-иловада маҳалла ишлари матнидаги ТП рақами (асосий рақам) бўйича, шу туман РЭСи ичида."),
-        ("Обод файли", "Ҳар бир ТП тизим ҳисоботидан ТП рақами, истеъмолчилар, қувват ва кунлик истеъмол бўйича "
-                       "бир маъноли топилди (205/205)."),
-        ("Кучланиш", "А/Б/С фазалари тизим ҳисоботи сарлавҳалари бўйича (L1/L2/L3). Обод файлида А ва Б "
-                     "устунлари ўрни алмашган — «Тузатишлар» варағида иккаласи кўрсатилган."),
-        ("Ойлик / йиллик", "Ойлик = кунлик × 30, йиллик = ойлик × 12 (Обод файлидаги ҳисоблаш усули)."),
-        ("Ҳисоб хатоси", "Кунлик истеъмоли манфий ёки нол ТП лар сайтдаги йиғиндиларга қўшилмайди."),
-        ("Ҳолат", "ТП тоифаси юкланиш бўйича: 0–50% — яшил, 50–60% — сариқ, 60% дан юқори — қизил."),
-        ("Саломатлик индекси", "0–100: кучланиш (ГОСТ 32144, 230 В ±5%), фазалар фарқи, юкланиш, "
-                               "истеъмолчилар зичлиги, cos φ ва ҳисоб хатоси бўйича."),
-        ("Варақлар", f"{S_DIST}, {S_MAH}, {S_TP}, {S_WORK}, {S_FIX}. Жамлар ва ҳосила устунлар формулалар билан."),
-    ]
+        ("Манба", f"{src.file_name if src else ''}, варақ «{src.sheet if src else ''}»"),
+        ("Ҳисоблаш", "Манба файлда бир иш ТП секциялари бўйича бир неча қаторда такрорланган — бу ерда ҳар бир иш "
+                     "бир марта ҳисобланган. Матни рақамларга мос келмаган қаторлар рақамлар бўйича тузатилган, "
+                     "манфий истеъмол ва бўш ТП маълумотлари олинмаган."),
+        ("Ижро (амалда)", "«Ишлар» варағидаги сариқ устунлар — сайтдаги админ панелида киритилган ижро журнали "
+                          "йиғиндиси; ҳар бир ёзув «Ижро журнали» варағида."),
+        ("ТП ҳолати", "Юкланиш бўйича: 0–50% — яшил, 50–60% — сариқ, 60% дан юқори — қизил."),
+        ("Ойлик / йиллик", "Ойлик = кунлик × 30, йиллик = кунлик × 365 (ҳисобланган)."),
+        ("Кучланиш", "Файл сарлавҳасида кучланиш устунлари L2, L1, L3 тартибида; бу ерда L1, L2, L3 тартибида."),
+    ] + [("Изоҳ", n) for n in (src.notes if src else [])]
     for i, (k, v) in enumerate(lines, start=3):
         ws.cell(row=i, column=1, value=k).font = F_BOLD
         c = ws.cell(row=i, column=2, value=v)
         c.font = F_BASE
         c.alignment = Alignment(wrap_text=True, vertical="top")
 
-    order = [S_INFO, S_DIST, S_MAH, S_TP, S_WORK, S_FIX]
-    wb._sheets = [wb[n] for n in order]
-    wb.active = 0
     wb.calculation.fullCalcOnLoad = True
-    wb.save(path)
-    return path
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

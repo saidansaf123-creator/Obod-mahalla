@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Обод маҳалла · Тошкент шаҳар электр тармоқлари</title>
   <meta name="description" content="Тошкент шаҳри туманлари, маҳаллалари ва трансформатор пунктлари бўйича электр тармоқлари мониторинги">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,14 +25,27 @@
         <a href="#/home" class="menu__item" data-nav="home"><i data-lucide="layout-dashboard"></i><span>Бош саҳифа</span></a>
         <a href="#/districts" class="menu__item" data-nav="districts"><i data-lucide="map"></i><span>Туманлар</span><em data-count="districts"></em></a>
         <a href="#/mahallas" class="menu__item" data-nav="mahallas"><i data-lucide="house"></i><span>Маҳаллалар</span><em data-count="mahallas"></em></a>
+        <a href="#/works" class="menu__item" data-nav="works"><i data-lucide="hammer"></i><span>Ишлар</span><em data-count="works"></em></a>
         <a href="#/tps" class="menu__item" data-nav="tps"><i data-lucide="zap"></i><span>Трансформаторлар</span><em data-count="tps"></em></a>
         <a href="#/goals" class="menu__item" data-nav="goals"><i data-lucide="target"></i><span>Мақсадлар</span><em data-count="goals"></em></a>
+        <div class="menu__label menu__label--gap">Назорат</div>
+        <a href="#/progress" class="menu__item" data-nav="progress"><i data-lucide="calendar-check"></i><span>Ижро (режа/амал)</span></a>
+        <a href="#/analytics" class="menu__item" data-nav="analytics"><i data-lucide="chart-no-axes-combined"></i><span>Таҳлил</span></a>
+        <div class="menu__admin" data-admin-only hidden>
+          <div class="menu__label menu__label--gap">Админ</div>
+          <a href="#/admin" class="menu__item menu__item--admin" data-nav="admin"><i data-lucide="square-pen"></i><span>Ижро киритиш</span></a>
+          <a href="#/admin-log" class="menu__item menu__item--admin" data-nav="admin-log"><i data-lucide="history"></i><span>Ижро журнали</span><em data-count="entries"></em></a>
+          <a href="#/admin-upload" class="menu__item menu__item--admin" data-nav="admin-upload"><i data-lucide="file-up"></i><span>Excel юклаш</span></a>
+          <button type="button" class="menu__item menu__item--logout" data-logout><i data-lucide="log-out"></i><span>Чиқиш</span></button>
+        </div>
       </nav>
 
       <div class="side-health" data-side-health></div>
 
+      <a class="side-export" href="{% url 'export' %}"><i data-lucide="download"></i><span>Excel юклаб олиш</span></a>
+
       <div class="side-foot">
-        <span>Манбалар: Обод файли, тизим ҳисоботи, 2027 дастури</span>
+        <span data-source></span>
         <span>Меъёр: ГОСТ 32144 (230 В ±5%)</span>
       </div>
     </aside>
@@ -41,7 +55,7 @@
         <nav class="crumbs" data-crumbs aria-label="Йўл"></nav>
         <div class="search" data-search>
           <i data-lucide="search" class="search__icon"></i>
-          <input type="search" class="search__input" placeholder="Туман, маҳалла ёки ТП рақами…" autocomplete="off"
+          <input type="search" class="search__input" placeholder="Туман, маҳалла, иш ёки ТП рақами…" autocomplete="off"
                  aria-label="Қидириш" data-search-input>
           <kbd>/</kbd>
           <div class="search__results" data-search-results hidden></div>
@@ -54,6 +68,31 @@
   </div>
 
   {% json_data payload "app-data" %}
+  {% json_data meta "app-meta" %}
+
+  <!-- Бошқа фойдаланувчилар учун: админ маълумотни ўзгартираётганда -->
+  <div class="busy" data-busy hidden role="status" aria-live="polite">
+    <div class="busy__box">
+      <svg class="bolt-anim" viewBox="0 0 120 120" aria-hidden="true">
+        <defs>
+          <linearGradient id="boltGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#67e8f9"/><stop offset=".55" stop-color="#38bdf8"/><stop offset="1" stop-color="#fde047"/>
+          </linearGradient>
+          <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/><stop offset="1" stop-color="#22d3ee"/>
+          </linearGradient>
+        </defs>
+        <circle class="bolt-anim__track" cx="60" cy="60" r="52"/>
+        <g class="bolt-anim__spin"><circle class="bolt-anim__arc" cx="60" cy="60" r="52"/><circle class="bolt-anim__spark" cx="112" cy="60" r="4"/></g>
+        <g class="bolt-anim__spin2"><circle class="bolt-anim__arc2" cx="60" cy="60" r="41"/></g>
+        <path class="bolt-anim__bolt" d="M67 16 L35 66 H57 L50 104 L86 50 H63 Z"/>
+      </svg>
+      <b>Маълумотлар ўзгартирилмоқда</b>
+      <span data-busy-reason>Администратор маълумот киритмоқда</span>
+      <small>Тугагач, сайт ўзи янгиланади — саҳифани ёпманг</small>
+    </div>
+  </div>
+  <div class="toast" data-toast hidden></div>
   <script src="{% asset 'vendor/lucide.min.js' %}"></script>
   <script src="{% asset 'vendor/chart.umd.min.js' %}"></script>
   <script src="{% asset 'js/app.js' %}"></script>

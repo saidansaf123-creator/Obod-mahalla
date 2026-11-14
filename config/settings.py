@@ -44,6 +44,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.middleware.gzip.GZipMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -99,6 +100,10 @@ STORAGES = {
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# Сайт ичидаги админ панели пароли (Railway'да ADMIN_PANEL_PASSWORD орқали ўзгартириш мумкин)
+ADMIN_PANEL_PASSWORD = env("ADMIN_PANEL_PASSWORD", default="6613")
+SESSION_COOKIE_AGE = 60 * 60 * 12
 
 # Excel va boshqa xom ma'lumotlar papkasi
 DATA_DIR = BASE_DIR / "data"

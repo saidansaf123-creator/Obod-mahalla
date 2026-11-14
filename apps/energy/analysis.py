@@ -117,7 +117,7 @@ class TPMetrics:
 
 
 def analyze(tp) -> Report:
-    phases = {"А": tp.voltage_a, "Б": tp.voltage_b, "С": tp.voltage_c}
+    phases = {"L1": tp.voltage_a, "L2": tp.voltage_b, "L3": tp.voltage_c}
     known = {p: v for p, v in phases.items() if v is not None}
     states = {p: phase_state(v) for p, v in phases.items()}
     issues, score = [], 100

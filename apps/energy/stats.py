@@ -1,70 +1,78 @@
-"""ТП рўйхатидан умумий кўрсаткичларни ҳисоблаш.
-
-Шаҳар кўрсаткичлари — туманлар йиғиндиси. Истеъмоли манфий/нол (ҳисоб хатоси) ёки
-номаълум бўлган ТП лар истеъмол йиғиндисига қўшилмайди.
-"""
+"""Йиғма кўрсаткичлар: режа/амал (ишлар бўйича) ва ТП секциялари таҳлили."""
 from collections import defaultdict
 
+PLAN_KEYS = ["lv_km", "hv_km", "tr_upgrade", "new_gktp", "grsh", "cost"]
 
-def summarize(tps):
-    tps = list(tps)
-    n = len(tps)
+FACT_MAP = {"lv_km": "fact_lv_km", "hv_km": "fact_hv_km", "tr_upgrade": "fact_tr_upgrade",
+            "new_gktp": "fact_new_gktp", "grsh": "fact_grsh", "cost": "fact_cost"}
+
+
+def plan_totals(works):
+    p = {k: round(sum((getattr(w, k) or 0) for w in works), 3) for k in PLAN_KEYS}
+    p["km"] = round(p["lv_km"] + p["hv_km"], 3)
+    p["tr"] = p["tr_upgrade"] + p["new_gktp"]
+    p["works"] = len(works)
+    p["no_cost"] = sum(1 for w in works if w.cost is None)
+    return p
+
+
+def fact_totals(works):
+    f = {k: round(sum((getattr(w, FACT_MAP[k]) or 0) for w in works), 3) for k in PLAN_KEYS}
+    f["km"] = round(f["lv_km"] + f["hv_km"], 3)
+    f["tr"] = f["tr_upgrade"] + f["new_gktp"]
+    f["done"] = sum(1 for w in works if _done(w))
+    return f
+
+
+def _done(w):
+    """Иш бажарилган: режадаги ҳар бир ҳажм амалда тўлиқ қопланган."""
+    pairs = [(getattr(w, k) or 0, getattr(w, FACT_MAP[k]) or 0) for k in PLAN_KEYS if k != "cost"]
+    planned = [(p, f) for p, f in pairs if p > 0]
+    return bool(planned) and all(f >= p for p, f in planned)
+
+
+def summarize(sections):
+    """ТП секциялари бўйича (маълумоти бор секциялар)."""
+    secs = [s for s in sections if s.has_data]
+    n = len(secs)
+    out = {"count": len(list(sections)), "with_data": n}
     if not n:
-        return {"tp_count": 0}
-    valid = [t for t in tps if t.daily_kwh is not None and not t.has_anomaly]
-    capacity = sum(t.capacity_kva for t in tps)
-    actual = sum(t.actual_kva for t in tps)
+        return out
+    valid = [s for s in secs if s.daily_kwh is not None and not s.has_anomaly]
+    capacity = sum(s.capacity_kva for s in secs)
+    actual = sum((s.kva_total or 0) for s in secs)
     status = defaultdict(int)
-    for t in tps:
-        status[t.report.status] += 1
-    consumers = sum(t.consumers_total for t in tps)
-    household = sum(t.consumers_household for t in tps)
-    daily = sum(t.daily_kwh for t in valid)
-    valid_consumers = sum(t.consumers_total for t in valid)
-    volts = [t.avg_voltage for t in tps if t.avg_voltage is not None]
-    return {
-        "tp_count": n,
+    for s in secs:
+        status[s.report.status] += 1
+    consumers = sum(s.consumers_total for s in secs)
+    household = sum(s.consumers_household for s in secs)
+    daily = sum(s.daily_kwh for s in valid)
+    valid_consumers = sum(s.consumers_total for s in valid)
+    volts = [s.avg_voltage for s in secs if s.avg_voltage is not None]
+    pfs = [s.pf for s in secs if s.pf]
+    out.update({
         "consumers": consumers,
         "household": household,
-        "commercial": sum(t.consumers_commercial for t in tps),
+        "commercial": sum(s.consumers_commercial for s in secs),
+        "household_pct": household / consumers * 100 if consumers else 0,
         "capacity_kva": capacity,
-        "capacity_mva": capacity / 1000,
         "actual_kva": actual,
         "reserve_kva": capacity - actual,
         "load_pct": actual / capacity * 100 if capacity else 0,
         "daily_kwh": daily,
         "monthly_kwh": daily * 30,
-        "yearly_kwh": daily * 360,
+        "yearly_kwh": daily * 365,
         "kwh_per_consumer": daily * 30 / valid_consumers if valid_consumers else 0,
-        "valid_consumers": valid_consumers,
         "avg_voltage": sum(volts) / len(volts) if volts else None,
-        "health": sum(t.report.score for t in tps) / n,
-        "good": status["good"],
-        "warn": status["warn"],
-        "crit": status["crit"],
+        "avg_pf": sum(pfs) / len(pfs) if pfs else None,
+        "health": sum(s.report.score for s in secs) / n,
+        "good": status["good"], "warn": status["warn"], "crit": status["crit"],
         "problems": status["warn"] + status["crit"],
-        "anomalies": sum(1 for t in tps if t.has_anomaly),
-        "household_pct": household / consumers * 100 if consumers else 0,
-    }
-
-
-def combine(parts):
-    """Бир нечта summarize() натижасини жамлаш (масалан, туманлардан шаҳар)."""
-    parts = [p for p in parts if p.get("tp_count")]
-    if not parts:
-        return {"tp_count": 0}
-    keys = ["tp_count", "consumers", "household", "commercial", "capacity_kva", "actual_kva", "reserve_kva",
-            "daily_kwh", "monthly_kwh", "yearly_kwh", "good", "warn", "crit", "problems", "anomalies",
-            "valid_consumers"]
-    out = {k: sum(p.get(k) or 0 for p in parts) for k in keys}
-    n = out["tp_count"]
-    out["capacity_mva"] = out["capacity_kva"] / 1000
-    out["load_pct"] = out["actual_kva"] / out["capacity_kva"] * 100 if out["capacity_kva"] else 0
-    out["kwh_per_consumer"] = out["monthly_kwh"] / out["valid_consumers"] if out["valid_consumers"] else 0
-    out["health"] = sum(p["health"] * p["tp_count"] for p in parts) / n
-    vs = [(p["avg_voltage"], p["tp_count"]) for p in parts if p.get("avg_voltage")]
-    out["avg_voltage"] = sum(v * w for v, w in vs) / sum(w for _, w in vs) if vs else None
-    out["household_pct"] = out["household"] / out["consumers"] * 100 if out["consumers"] else 0
+        "anomalies": sum(1 for s in secs if s.has_anomaly),
+        "low_pf": sum(1 for s in secs if s.pf is not None and 0 < s.pf < 0.92),
+        "voltage_issues": sum(1 for s in secs if s.report.has("low_voltage") or s.report.has("high_voltage")),
+        "imbalance": sum(1 for s in secs if s.report.has("imbalance")),
+    })
     return out
 
 
@@ -72,8 +80,8 @@ def health_status(score):
     return "good" if score >= 80 else "warn" if score >= 65 else "crit"
 
 
-def group_by(tps, key):
+def group_by(items, key):
     groups = defaultdict(list)
-    for t in tps:
+    for t in items:
         groups[key(t)].append(t)
     return groups
