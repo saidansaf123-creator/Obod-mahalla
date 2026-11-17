@@ -182,3 +182,75 @@ class AdminPanelTests(TestCase):
         w2 = Work.objects.get(district__order=3, number=1)
         self.assertNotEqual(w2.id, w.id)
         self.assertEqual(w2.fact_cost, 50)
+
+
+def _nagruzka_xlsx(rows):
+    import io
+    import openpyxl
+    from . import tpsync
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    head = ["№", tpsync.KEY_RES, tpsync.KEY_TP, "Даража"] + list(tpsync.COLUMNS)
+    ws.append(head)
+    for r in rows:
+        ws.append([r.get(h) for h in head])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+class TpSyncTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        call_command("import_excel", verbosity=0)
+
+    def test_updates_only_existing_sections(self):
+        from unittest import mock
+        from . import services, tpsync
+        from .models import TpSync
+        s = Section.objects.get(number="0916")
+        before = Section.objects.count()
+        data = _nagruzka_xlsx([
+            {"РЭС": s.res, "ТП рақами": "0916", "Нагрузка (%)": 55.5, "Қувват (kVA)": 630, "Жами (kVA)": 349.6,
+             "Ўрт. суткалик истеъмол (kWh)": -5, "Ҳисоблагичлар (жами)": 230, "Кучланиш L1 (В)": 231.2,
+             "Баланс ҳисоблагич": s.meter_no, "cos φ": 0.97},
+            {"РЭС": "Olmazor TETK", "ТП рақами": "99999", "Нагрузка (%)": 10},     # сайтда йўқ — қўшилмайди
+        ])
+        job = TpSync.objects.create()
+        tpsync._lock.acquire()
+        v0 = services.state().version
+        with mock.patch.object(tpsync, "download", return_value=("nagruzka_test.xlsx", data)):
+            tpsync._run(job.id, "")
+        job.refresh_from_db()
+        self.assertEqual(job.status, "done", job.message)
+        s.refresh_from_db()
+        self.assertEqual((s.load_factor, s.consumers_total, s.voltage_a, s.pf), (0.555, 230, 231.2, 0.97))
+        self.assertIsNone(s.daily_kwh)                      # манфий истеъмол олинмайди
+        self.assertEqual(Section.objects.count(), before)   # янги ТП қўшилмади
+        self.assertEqual(job.matched, 1)
+        self.assertGreater(services.state().version, v0)
+        # Excel қайта юкланса ҳам янгиланган қиймат сақланади
+        call_command("import_excel", verbosity=0)
+        self.assertEqual(Section.objects.get(number="0916").load_factor, 0.555)
+
+    def test_rejects_wrong_format_and_unsafe_url(self):
+        from django.test import override_settings
+        from . import tpsync
+        with self.assertRaises(tpsync.SyncError):
+            tpsync.parse(b"PK not really")
+        import io
+        import openpyxl
+        wb = openpyxl.Workbook()
+        wb.active.append(["бошқа", "устунлар"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        with self.assertRaises(tpsync.SyncError):
+            tpsync.parse(buf.getvalue())
+        with override_settings(NAGRUZKA_EXPORT_URL="http://example.com/x"):
+            with self.assertRaises(tpsync.SyncError):
+                tpsync.source_url()
+
+    def test_admin_only(self):
+        r = self.client.post("/panel/tp-sync")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(self.client.get("/panel/tp-sync/status").status_code, 403)

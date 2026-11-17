@@ -328,7 +328,7 @@
           <span class="row__sub">${t.cap ? t.cap + " кВА · " : ""}${esc(mahalla(t.m).name)} · ${esc(district(t.d).name)}</span></div>
         <div class="row__side">${pill(t.status, STATUS[t.status])}</div>`,
       detail: tpDetail,
-      summary: () => `${D.tps.length} та`,
+      summary: () => `${D.tps.length} та` + (D.tpSync ? ` · ${D.tpSync.at.slice(0, 10)}` : ""),
     },
     goals: {
       title: "Мақсадлар",
@@ -838,7 +838,8 @@
           <div class="card__body"><table class="kv">${kvRow("Название РЭС", esc(t.res))}${kvRow("Подстанция", esc(t.ps))}${kvRow("Фидер", esc(t.fd))}
             ${kvRow("Номер ТП", esc(t.n))}${kvRow("ТП (C устуни)", esc(t.base))}${kvRow("Tr Владелец", esc(t.own))}${kvRow("Мастер Тр", esc(t.mst))}
             ${kvRow("Номер счетчика баланса", esc(t.mtr))}${kvRow("Коэффициент КТ", n(t.kt, 0))}${kvRow("Состояние счетчика", esc(t.st))}
-            ${kvRow("Примечание", esc(t.note))}${kvRow("Файл қатори", t.row)}</table></div></div>
+            ${kvRow("Примечание", esc(t.note))}${kvRow("Файл қатори", t.row)}
+            ${kvRow("Маълумот манбаи", D.tpSync ? `«Нагрузка» тизими · ${esc(D.tpSync.at)}` : "Манзилли дастур файли")}</table></div></div>
         <div class="card"><div class="card__head"><h3>Истеъмолчи ва юклама</h3><span class="muted">T–AB, AM</span></div>
           <div class="card__body"><table class="kv">${kvRow("Счётчиклар: всего / бытовые / промышленные", `${t.ct} / ${t.ch} / ${t.cc}`)}${kvRow("Мощность", t.cap + " кВА")}
             ${kvRow("Среднесуточное потребление", n(t.dk, 3) == null ? null : n(t.dk, 3) + " кВт·соат")}
@@ -1131,7 +1132,7 @@
             <span>${esc(cat(k.kind).label)}<small>${k.count} та иш · ${share(k.cost)}</small></span><b>${money(k.cost)}</b></li>`).join("")}</ul>
         </section>
         ${fund ? `<section>
-          <h4 class="sub-h">Маблағ манбалари (ким тўлайди)</h4>
+          <h4 class="sub-h">Маблағ манбалари</h4>
           <div class="donut donut--md"><canvas></canvas><div class="donut__c"><b>3</b><span>манба</span></div></div>
           <ul class="mlist">${fund.map((x, i) => `<li><i class="dot" style="background:${x.color}"></i>
             <span>${i + 1}. ${esc(x.name)}<small>${x.sub ? esc(x.sub) + " · " : ""}${share(x.value)}</small></span><b>${esc(x.label)}</b></li>`).join("")}</ul>
@@ -1253,7 +1254,7 @@
   const fnv = (str) => { let x = 0x811c9dc5; for (const ch of str) { x ^= ch.codePointAt(0); x = Math.imul(x, 0x01000193) >>> 0; } return x.toString(36); };
   const SECRET = ["ejawd3", "epsoxa", "1dnujrl"];   // махфий сўз хеши (кирилл ва лотин ёзувида)
   const isSecret = (q) => SECRET.includes(fnv(q.toLowerCase().replace(/\s+/g, "")));
-  const ADMIN_VIEWS = ["admin", "admin-log", "admin-upload"];
+  const ADMIN_VIEWS = ["admin", "admin-log", "admin-upload", "admin-tp"];
 
   function applyAdminUI() {
     $$("[data-admin-only]").forEach((el) => { el.hidden = !IS_ADMIN; });
@@ -1633,11 +1634,96 @@
     return [["Админ", "#/admin"], ["Excel юклаш"]];
   }
 
+  /* ТП маълумотларини «Нагрузка» тизимидан янгилаш */
+  let tpPoll = null;
+  function renderAdminTp() {
+    clearTimeout(tpPoll);
+    const info = D.tpSync;
+    viewEl.innerHTML = `
+      <div class="page page--upload">
+        <div class="head">
+          <div>
+            <span class="eyebrow">${icon("refresh-cw")}Админ · ТП маълумотлари</span>
+            <h1>ТП маълумотларини янгилаш</h1>
+            <div class="head__sub">Манба: «Нагрузка» тизими → ТП рўйхати → Excel. Фақат сайтдаги ${D.tps.length} та ТП янгиланади: янги ТП қўшилмайди, борлари ўчирилмайди.
+              ${info ? `<span class="muted">· охирги янгилаш: ${esc(info.at)}</span>` : ""}</div>
+          </div>
+          <div class="head__right"><button type="button" class="btn btn--gold btn--big" data-tpsync>${icon("refresh-cw")}ТП маълумотларини янгилаш</button></div>
+        </div>
+        <div class="ugrid">
+          <div class="card card--form">
+            <div class="card__head"><h3>Жараён</h3><span class="muted" data-tp-time></span></div>
+            <div class="card__body" data-tp-state><div class="muted small">Юкланмоқда…</div></div>
+          </div>
+          <div class="card">
+            <div class="card__head"><h3>Янгилашлар тарихи</h3></div>
+            <div class="card__body" data-tp-hist></div>
+          </div>
+        </div>
+      </div>`;
+    const btn = $("[data-tpsync]", viewEl);
+    btn.addEventListener("click", async () => {
+      if (!confirm("ТП маълумотлари «Нагрузка» тизимидан юклаб олиниб янгиланади. Бу 1–2 дақиқа олади ва шу вақтда бошқа фойдаланувчиларда «Маълумотлар ўзгартирилмоқда» белгиси чиқади. Давом этасизми?")) return;
+      btn.disabled = true;
+      const j = await post("panel/tp-sync");
+      if (!j.ok) { toast(j.error || "Хатолик", "err"); btn.disabled = false; return; }
+      if (!j.started) toast("Янгилаш аллақачон бажарилмоқда — кутинг", "err");
+      loadTpStatus();
+    });
+    loadTpStatus();
+    return [["Админ", "#/admin"], ["ТП маълумотлари"]];
+  }
+
+  async function loadTpStatus() {
+    let j;
+    try { j = await (await fetch("panel/tp-sync/status", { cache: "no-store", credentials: "same-origin" })).json(); }
+    catch (e) { return; }
+    const box = $("[data-tp-state]", viewEl), hist = $("[data-tp-hist]", viewEl), btn = $("[data-tpsync]", viewEl);
+    if (!box) return;                                   // бошқа саҳифага ўтилган
+    const job = j.job;
+    const running = job && job.status === "running";
+    btn.disabled = running;
+    $("[data-tp-time]", viewEl).textContent = job ? (job.finished || job.started) : "";
+    if (!job) {
+      box.innerHTML = `<div class="empty">${icon("refresh-cw")}<span>Ҳали янгиланмаган. «ТП маълумотларини янгилаш» тугмасини босинг.</span></div>`;
+    } else if (running) {
+      box.innerHTML = `<div class="tp-run">
+          <svg class="bolt-anim bolt-anim--sm" viewBox="0 0 120 120" aria-hidden="true"><circle class="bolt-anim__track" cx="60" cy="60" r="52"/>
+            <g class="bolt-anim__spin"><circle class="bolt-anim__arc" cx="60" cy="60" r="52"/></g><path class="bolt-anim__bolt" d="M67 16 L35 66 H57 L50 104 L86 50 H63 Z"/></svg>
+          <b>${esc(job.step)}</b><span class="muted small">Саҳифани ёпманг — тугагач натижа шу ерда чиқади</span></div>`;
+    } else {
+      const ok = job.status === "done";
+      box.innerHTML = `
+        <div class="uresult ${ok ? "" : "uresult--err"}"><b>${icon(ok ? "circle-check" : "triangle-alert")}${ok ? "Янгиланди" : "Хато"}</b><p class="small">${esc(job.message)}</p></div>
+        ${ok ? `<div class="facts facts--3" style="margin:12px 0">
+          <div><span>Файлдаги ТП лар</span><b>${fmt(job.total)}</b></div>
+          <div><span>Сайтдагидан топилди</span><b>${job.matched} / ${D.tps.length}</b></div>
+          <div><span>Маълумоти ўзгарди</span><b>${job.changed}</b></div></div>
+          ${job.missing.length ? `<p class="small t-warn">Файлда топилмади (ўзгартирилмади): ${esc(job.missing.join(", "))}</p>` : ""}
+          ${job.changes.length ? `<h4 class="sub-h">Юкланиши энг кўп ўзгарган ТП лар</h4>
+            <table class="tbl tbl--compact"><thead><tr><th>ТП</th><th>РЭС</th><th class="r">Аввал</th><th class="r">Ҳозир</th><th class="r">Майдон</th></tr></thead>
+            <tbody>${job.changes.map((c) => {
+              const t = D.tps.find((x) => x.n === c.n && x.res === c.res);
+              const lv = (v) => (v == null ? "—" : fmt(v * 100, 1) + "%");
+              return `<tr ${t ? `data-href="#/tps/${t.id}"` : ""}><td><b>ТП-${esc(c.n)}</b></td><td class="muted">${esc(c.res)}</td>
+                <td class="r">${lv(c.lf_before)}</td><td class="r t-${loadLevel((c.lf_after || 0) * 100)}">${lv(c.lf_after)}</td><td class="r">${c.fields}</td></tr>`;
+            }).join("")}</tbody></table>` : ""}` : ""}`;
+    }
+    hist.innerHTML = j.history.length ? `<table class="tbl tbl--wrap tbl--compact"><thead><tr><th>Вақт</th><th>Ҳолат</th><th>Натижа</th></tr></thead><tbody>${j.history.map((h) =>
+      `<tr><td class="nowrap">${esc(h.started)}</td><td>${pill(h.status === "done" ? "good" : h.status === "error" ? "crit" : "warn", h.status === "done" ? "Тайёр" : h.status === "error" ? "Хато" : "Жараёнда")}</td>
+        <td class="small">${esc(h.message || h.step)}${h.file ? `<br><span class="muted">${esc(h.file)}</span>` : ""}</td></tr>`).join("")}</tbody></table>
+      <p class="muted small" style="margin-top:10px">Манба: <a href="${esc(j.source)}" target="_blank" rel="noopener noreferrer">${esc(j.source)}</a></p>`
+      : `<div class="muted small">Ҳали янгиланмаган.</div>`;
+    icons();
+    if (running) { tpPoll = setTimeout(loadTpStatus, 2000); }
+    else if (job && job.status === "done" && D.tpSync?.at !== job.finished.slice(0, 16)) { await refreshData(true); }
+  }
+
   /* =========================================================
      Маршрутлаш
      ========================================================= */
   const PAGES = { home: renderHome, progress: renderProgress, analytics: renderAnalytics,
-                  "admin-log": renderAdminLog, "admin-upload": renderAdminUpload };
+                  "admin-log": renderAdminLog, "admin-upload": renderAdminUpload, "admin-tp": renderAdminTp };
   let current = null;
 
   function parse() {

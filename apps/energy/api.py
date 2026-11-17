@@ -8,8 +8,8 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
-from . import services
-from .models import DataFile, ProgressEntry, Work
+from . import services, tpsync
+from .models import DataFile, ProgressEntry, TpSync, Work
 from .views import cached_payload
 
 MAX_UPLOAD = 15 * 1024 * 1024
@@ -173,6 +173,25 @@ def upload(request):
         services.unlock(key)
         raise
     return JsonResponse({"ok": True, **res})
+
+
+# ---------------------------------------------------------------- ТП маълумотларини «Нагрузка»дан янгилаш
+@require_POST
+@admin_required
+def tp_sync_start(request):
+    if not request.session.session_key:
+        request.session.save()
+    job, started = tpsync.start(request.session.session_key)
+    return JsonResponse({"ok": True, "started": started, "job": tpsync.job_json(job)})
+
+
+@require_GET
+@admin_required
+def tp_sync_status(request):
+    jobs = list(TpSync.objects.all()[:10])
+    return JsonResponse({"job": tpsync.job_json(jobs[0]) if jobs else None,
+                         "history": [{k: v for k, v in tpsync.job_json(j).items() if k not in ("changes",)} for j in jobs],
+                         "source": settings.NAGRUZKA_EXPORT_URL.split("/api/")[0]})
 
 
 @require_GET

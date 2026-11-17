@@ -104,6 +104,8 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Сайт ичидаги админ панели пароли (Railway'да ADMIN_PANEL_PASSWORD орқали ўзгартириш мумкин)
 ADMIN_PANEL_PASSWORD = env("ADMIN_PANEL_PASSWORD", default="6613")
 SESSION_COOKIE_AGE = 60 * 60 * 12
+# ТП маълумотлари манбаи («Нагрузка» тизими). Фақат шу манзилдан юклаб олинади.
+NAGRUZKA_EXPORT_URL = env("NAGRUZKA_EXPORT_URL", default="https://nagruzka.onrender.com/api/tp/export/?sort=-load_pct")
 
 # Excel va boshqa xom ma'lumotlar papkasi
 DATA_DIR = BASE_DIR / "data"

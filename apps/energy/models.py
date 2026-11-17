@@ -243,3 +243,28 @@ class SiteState(models.Model):
     class Meta:
         verbose_name = "Сайт ҳолати"
         verbose_name_plural = "Сайт ҳолати"
+
+
+class TpSync(models.Model):
+    """ТП маълумотларини ташқи «Нагрузка» тизимидан янгилаш (ҳар бир ишга тушириш)."""
+    started_at = models.DateTimeField("Бошланди", auto_now_add=True)
+    finished_at = models.DateTimeField("Тугади", null=True, blank=True)
+    status = models.CharField("Ҳолат", max_length=10, default="running",
+                              choices=[("running", "Бажарилмоқда"), ("done", "Тайёр"), ("error", "Хато")])
+    step = models.CharField("Босқич", max_length=200, blank=True)
+    file_name = models.CharField("Файл", max_length=200, blank=True)
+    total_rows = models.PositiveIntegerField("Файлдаги ТП лар", default=0)
+    matched = models.PositiveIntegerField("Топилган", default=0)
+    changed = models.PositiveIntegerField("Ўзгарган", default=0)
+    missing = models.JSONField("Топилмаган", default=list)
+    changes = models.JSONField("Ўзгаришлар", default=list)
+    data = models.JSONField("Янги қийматлар", default=dict)
+    message = models.TextField("Хабар", blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = "ТП маълумотларини янгилаш"
+        verbose_name_plural = "ТП маълумотларини янгилаш"
+
+    def __str__(self):
+        return f"{self.started_at:%d.%m.%Y %H:%M} · {self.status}"

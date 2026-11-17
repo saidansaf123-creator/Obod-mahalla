@@ -15,4 +15,6 @@ urlpatterns = [
     path("panel/entry/<int:pk>/delete", api.delete_entry),
     path("panel/upload", api.upload),
     path("panel/uploads", api.uploads),
+    path("panel/tp-sync", api.tp_sync_start),
+    path("panel/tp-sync/status", api.tp_sync_status),
 ]

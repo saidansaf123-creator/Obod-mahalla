@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.core.cache import cache
 
 from . import services
-from .models import District, Goal, ProgressEntry, Section, SourceInfo, Work
+from .models import District, Goal, ProgressEntry, Section, SourceInfo, TpSync, Work
 from .source import CATEGORIES, PLAN_FIELDS
 from .stats import FACT_MAP, fact_totals, group_by, health_status, plan_totals, summarize
 
@@ -21,6 +21,14 @@ FUNDING = [
     {"key": "fund_rt", "name": "Ўзбекистон Республикаси Тикланиш ва тараққиёт жамғармаси ҳисобидан", "usd": 8.0},
     {"key": "rek", "name": "«Ҳудудий электр тармоқлари» АЖ ўз ҳисобидан", "amount": 44410.0},
 ]
+
+
+def _tp_sync_info():
+    j = TpSync.objects.filter(status="done").first()
+    if not j:
+        return None
+    return {"at": timezone.localtime(j.finished_at).strftime("%d.%m.%Y %H:%M"), "file": j.file_name,
+            "matched": j.matched, "changed": j.changed}
 
 
 def _r(v, d=2):
@@ -175,7 +183,7 @@ def build_payload():
                     "date": e.date.isoformat(), "lv": e.lv_km, "hv": e.hv_km, "up": e.tr_upgrade, "gk": e.new_gktp,
                     "gr": e.grsh, "cost": e.cost, "note": e.note,
                     "at": timezone.localtime(e.created_at).strftime("%d.%m.%Y %H:%M")} for e in entries]
-    return {"city": city, "source": source, "categories": categories, "planFields": plan_fields, "entries": entry_items, "funding": FUNDING,
+    return {"city": city, "source": source, "categories": categories, "planFields": plan_fields, "entries": entry_items, "funding": FUNDING, "tpSync": _tp_sync_info(),
             "unitCosts": unit_costs(works), "districts": districts, "mahallas": mahallas, "works": work_items,
             "tps": tp_items, "goals": goal_items}
 

@@ -201,4 +201,6 @@ def load(src):
         Goal.objects.create(mahalla=m, **goal_gen.generate(name, ws, [s for w in ws for s in w.sections]))
 
     linked, orphan = relink_entries()
+    from .tpsync import reapply_latest
+    reapply_latest()          # «Нагрузка» тизимидан олинган охирги ТП маълумотлари сақланиб қолади
     return dict(summary(src), entries_linked=linked, entries_orphan=orphan)

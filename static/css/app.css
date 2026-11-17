@@ -774,3 +774,8 @@ body.is-admin .side-health { display: none; }
 .card[data-money]:hover { border-color: rgba(253, 224, 71, .45); }
 .city-money { border-bottom: 1px dashed rgba(253, 224, 71, .5); }
 .city-money:hover b { color: var(--money); }
+.btn--big { height: 40px; padding: 0 18px; font-size: .9rem; }
+.tp-run { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 30px 10px; }
+.tp-run b { font-size: .95rem; }
+.uresult--err { border-color: rgba(239, 68, 68, .4); background: rgba(239, 68, 68, .06); }
+.uresult--err > b { color: var(--crit); }

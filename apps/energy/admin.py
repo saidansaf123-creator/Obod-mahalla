@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DataFile, District, Goal, Mahalla, ProgressEntry, Section, SiteState, SourceInfo, Work
+from .models import TpSync, DataFile, District, Goal, Mahalla, ProgressEntry, Section, SiteState, SourceInfo, Work
 
 
 @admin.register(SourceInfo)
@@ -83,3 +83,11 @@ class DataFileAdmin(admin.ModelAdmin):
 @admin.register(SiteState)
 class SiteStateAdmin(admin.ModelAdmin):
     list_display = ["version", "busy_until", "busy_reason", "updated_at"]
+
+
+@admin.register(TpSync)
+class TpSyncAdmin(admin.ModelAdmin):
+    list_display = ["started_at", "status", "file_name", "total_rows", "matched", "changed"]
+    exclude = ["data"]
+    readonly_fields = ["started_at", "finished_at", "status", "step", "file_name", "total_rows", "matched", "changed",
+                       "missing", "changes", "message"]
