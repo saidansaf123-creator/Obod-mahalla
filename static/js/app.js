@@ -114,7 +114,7 @@
   function clearCharts() { charts.splice(0).forEach((c) => c.destroy()); }
   /* График «рецепти» canvas'да сақланади — катталаштирилганда қайта чизиш учун */
   function mk(canvas, build) { canvas.__build = build; charts.push(new Chart(canvas, build())); }
-  const C = { grid: "rgba(255,255,255,.07)", text: "#a1a1aa", panel: "#131315" };
+  const C = { grid: "rgba(255,255,255,.07)", text: "#a1a1aa", panel: "#17181d" };
   const tooltip = { backgroundColor: "#18181b", borderColor: "#3f3f46", borderWidth: 1, titleColor: "#fafafa", bodyColor: "#e4e4e7", padding: 10 };
   const anim = () => (reduceMotion ? false : { duration: 650 });
   const axes = () => ({
@@ -188,13 +188,13 @@
               <span><b>${qty(p.km)}</b> км тармоқ</span>
               <span><b>${p.tr}</b> та трансформатор</span>
               <span><b>${p.grsh}</b> та ГРШ</span>
-              <span><b>${bln(p.cost)}</b> млрд сўм</span>
+              <span class="city-money" data-money="city" title="Маблағ манбалари"><b>${bln(p.cost)}</b> млрд сўм</span>
             </div>
           </div>
           <div class="head__right">${progressBadge(progressOf(c), "Ижро (маблағ)")}</div>
         </div>
         <div class="kpis kpis--4">
-          ${kpi("coins", "Зарур маблағ", bln(p.cost), "млрд сўм", "", bar(progressOf(c), "good", "#fde047"), 7)}
+          ${moneyKpi("city", kpi("coins", "Зарур маблағ", bln(p.cost), "млрд сўм", "", bar(progressOf(c), "good", "#fde047"), 7))}
           ${kpi("plug-zap", "Паст кучланишли кабел", qty(p.lv_km), "км", "", bar(pct(f.lv_km, p.lv_km), "good"), 1)}
           ${kpi("cable", "Юқори кучланишли кабел", qty(p.hv_km), "км", "", bar(pct(f.hv_km, p.hv_km), "good"), 3)}
           ${kpi("circle-arrow-up", "Трансформатор алмаштириш", qty(p.tr_upgrade), "та", "", bar(pct(f.tr_upgrade, p.tr_upgrade), "good"), 6)}
@@ -208,7 +208,7 @@
             <div class="card__head"><h3>Туманлар бўйича маблағ: режа ва амалда</h3><span class="muted hide-narrow">млн сўм</span></div>
             <div class="chart"><canvas id="ch-districts"></canvas></div>
           </div>
-          <div class="card status-card">
+          <div class="card status-card" data-money="city" title="Батафсил: иш турлари ва маблағ манбалари">
             <div class="card__head"><h3>Ишлар таркиби</h3><span class="muted">${p.works} та</span></div>
             <div class="donut"><canvas id="ch-cats"></canvas><div class="donut__c"><b>${bln(p.cost)}</b><span>млрд сўм</span></div></div>
             ${legend(c.cats.map((k) => [CAT_COLOR[k.kind], CAT_SHORT[k.kind] + " (" + k.count + ")", moneyShort(k.cost)]), true)}
@@ -484,8 +484,9 @@
   }
 
   /* ---------- Умумий бўлаклар ---------- */
-  const planKpis = (p, f, extra = "") => `
-    ${kpi("coins", "Зарур маблағ", moneyPair(p.cost)[0], moneyPair(p.cost)[1], `амалда ${moneyShort(f.cost)}`, "", 7)}
+  const moneyKpi = (scope, html) => html.replace('<div class="kpi ', `<div data-money="${scope}" title="Батафсил: иш турлари${scope === "city" ? " ва маблағ манбалари" : ""}" class="kpi `);
+  const planKpis = (p, f, extra = "", scope = "") => `
+    ${moneyKpi(scope, kpi("coins", "Зарур маблағ", moneyPair(p.cost)[0], moneyPair(p.cost)[1], `амалда ${moneyShort(f.cost)}`, "", 7))}
     ${kpi("plug-zap", "Паст кучланишли кабел", qty(p.lv_km), "км", `амалда ${qty(f.lv_km)} км`, "", 1)}
     ${kpi("cable", "Юқори кучланишли кабел", qty(p.hv_km), "км", `амалда ${qty(f.hv_km)} км`, "", 3)}
     ${kpi("circle-arrow-up", "Трансформаторлар", qty(p.tr), "та", `${qty(p.tr_upgrade)} алмаштириш · ${qty(p.new_gktp)} ГКТП`, "", 6)}
@@ -540,7 +541,7 @@
         </div>
         <div class="head__right">${progressBadge(progressOf(c))}</div>
       </div>
-      <div class="kpis kpis--6">${planKpis(p, f, kpi("users", "Истеъмолчилар (ТП)", fmt(c.tp.consumers), "", `${c.tp.with_data} секция · юкланиш ${fmt(c.tp.load_pct, 1)}%`, "", 5))}</div>
+      <div class="kpis kpis--6">${planKpis(p, f, kpi("users", "Истеъмолчилар (ТП)", fmt(c.tp.consumers), "", `${c.tp.with_data} секция · юкланиш ${fmt(c.tp.load_pct, 1)}%`, "", 5), "city")}</div>
       <div class="dgrid dgrid--2">
         <div class="card">
           <div class="card__head"><h3>Туманлар</h3><span class="muted">Туманни танланг</span></div>
@@ -577,7 +578,7 @@
         </div>
         <div class="head__right">${progressBadge(progressOf(d))}</div>
       </div>
-      <div class="kpis kpis--6">${planKpis(p, f, kpi("users", "Истеъмолчилар (ТП)", d.tp.consumers ? fmt(d.tp.consumers) : "—", "", d.tp.with_data ? `${d.tp.with_data} секция · юкланиш ${fmt(d.tp.load_pct, 1)}%` : "ТП маълумоти йўқ", "", 5))}</div>
+      <div class="kpis kpis--6">${planKpis(p, f, kpi("users", "Истеъмолчилар (ТП)", d.tp.consumers ? fmt(d.tp.consumers) : "—", "", d.tp.with_data ? `${d.tp.with_data} секция · юкланиш ${fmt(d.tp.load_pct, 1)}%` : "ТП маълумоти йўқ", "", 5), "d:" + d.id)}</div>
       <div class="dgrid dgrid--2">
         <div class="card">
           <div class="card__head"><h3>Маҳаллалар</h3><span class="muted">Маҳаллани танланг</span></div>
@@ -617,7 +618,7 @@
         </div>
         <div class="head__right">${progressBadge(progressOf(c))}</div>
       </div>
-      <div class="kpis kpis--6">${planKpis(p, f, kpi("list-checks", "Юқори устуворлик", pr.high, "та", `${pr.medium} ўрта · ${pr.low} паст`, "", 8))}</div>
+      <div class="kpis kpis--6">${planKpis(p, f, kpi("list-checks", "Юқори устуворлик", pr.high, "та", `${pr.medium} ўрта · ${pr.low} паст`, "", 8), "city")}</div>
       <div class="dgrid dgrid--2">
         <div class="card">
           <div class="card__head"><h3>Маҳаллалар (маблағ бўйича)</h3><span class="muted">Маҳаллани танланг</span></div>
@@ -657,7 +658,7 @@
         </div>
         <div class="head__right">${t.btns}${progressBadge(progressOf(m))}</div>
       </div>
-      <div class="kpis kpis--6">${planKpis(p, f, kpi("users", "Истеъмолчилар (ТП)", m.tp.consumers ? fmt(m.tp.consumers) : "—", "", m.tp.with_data ? `юкланиш ${fmt(m.tp.load_pct, 1)}%` : "ТП маълумоти йўқ", "", 5))}</div>
+      <div class="kpis kpis--6">${planKpis(p, f, kpi("users", "Истеъмолчилар (ТП)", m.tp.consumers ? fmt(m.tp.consumers) : "—", "", m.tp.with_data ? `юкланиш ${fmt(m.tp.load_pct, 1)}%` : "ТП маълумоти йўқ", "", 5), "m:" + m.id)}</div>
       <div class="dgrid dgrid--2" data-tab="works" ${t.hidden("works")}>
         <div class="card"><div class="card__head"><h3>Режадаги ишлар</h3><span class="muted">Ишни танланг</span></div>
           <div class="card__body">${worksTable(ws)}</div></div>
@@ -1097,6 +1098,57 @@
     $("[data-zoom-close]", zoomEl).focus();
   }
 
+  /* «Зарур маблағ» устига босилганда: иш турлари ва (шаҳар бўйича) маблағ манбалари */
+  const FUND_COLOR = ["#38bdf8", "#a855f7", "#f59e0b"];
+  function fundingRows(total) {
+    const known = D.funding.reduce((s, x) => s + (x.amount || 0), 0);
+    const rest = Math.max(0, total - known);
+    return D.funding.map((x, i) => ({
+      name: x.name, color: FUND_COLOR[i % FUND_COLOR.length],
+      value: x.amount != null ? x.amount : rest,
+      label: x.amount != null ? money(x.amount) : `${fmt(x.usd, 0)} млн АҚШ доллари`,
+      sub: x.amount != null ? "" : (rest ? `≈ ${money(rest)} (жами маблағнинг қолган қисми)` : ""),
+    }));
+  }
+
+  function openMoney(scope) {
+    let name, plan, fact, cats;
+    if (scope.startsWith("d:")) { const d = district(+scope.slice(2)); name = d.name + " тумани"; ({ plan, fact, cats } = d); }
+    else if (scope.startsWith("m:")) { const m = mahalla(+scope.slice(2)); name = m.name + " маҳалласи"; ({ plan, fact, cats } = m); }
+    else { name = "Тошкент шаҳри"; ({ plan, fact, cats } = D.city); }
+    const total = plan.cost || 0;
+    const share = (v) => (total ? fmt(v / total * 100, 1) + "%" : "—");
+    const fund = scope === "city" || !scope ? fundingRows(total) : null;
+    const card = document.createElement("div");
+    card.className = "card money-card";
+    card.innerHTML = `
+      <div class="card__head"><h3>Зарур маблағ · ${esc(name)}</h3><span class="muted">${money(total)} · амалда ${fact.cost ? money(fact.cost) : "0"}</span></div>
+      <div class="mgrid ${fund ? "" : "mgrid--one"}">
+        <section>
+          <h4 class="sub-h">Иш турлари бўйича</h4>
+          <div class="donut donut--md"><canvas></canvas><div class="donut__c"><b>${moneyPair(total)[0]}</b><span>${moneyPair(total)[1]}</span></div></div>
+          <ul class="mlist">${cats.map((k) => `<li><i class="dot" style="background:${CAT_COLOR[k.kind]}"></i>
+            <span>${esc(cat(k.kind).label)}<small>${k.count} та иш · ${share(k.cost)}</small></span><b>${money(k.cost)}</b></li>`).join("")}</ul>
+        </section>
+        ${fund ? `<section>
+          <h4 class="sub-h">Маблағ манбалари (ким тўлайди)</h4>
+          <div class="donut donut--md"><canvas></canvas><div class="donut__c"><b>3</b><span>манба</span></div></div>
+          <ul class="mlist">${fund.map((x, i) => `<li><i class="dot" style="background:${x.color}"></i>
+            <span>${i + 1}. ${esc(x.name)}<small>${x.sub ? esc(x.sub) + " · " : ""}${share(x.value)}</small></span><b>${esc(x.label)}</b></li>`).join("")}</ul>
+        </section>` : ""}
+      </div>`;
+    const cvs = $$("canvas", card);
+    const donutBuild = (values, colors, labels) => () => ({
+      type: "doughnut",
+      data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: C.panel, borderWidth: 3, hoverOffset: 8 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: "70%", animation: anim(),
+                 plugins: { legend: { display: false }, tooltip: Object.assign({ callbacks: { label: (c) => ` ${c.label}: ${money(c.parsed)} (${share(c.parsed)})` } }, tooltip) } },
+    });
+    cvs[0].__build = donutBuild(cats.map((k) => k.cost), cats.map((k) => CAT_COLOR[k.kind]), cats.map((k) => cat(k.kind).label));
+    if (fund) cvs[1].__build = donutBuild(fund.map((x) => x.value), fund.map((x) => x.color), fund.map((x) => x.name));
+    openZoom(card);
+  }
+
   function closeZoom() {
     if (zoomEl.hidden) return;
     zoomCharts.splice(0).forEach((c) => c.destroy());
@@ -1108,6 +1160,8 @@
   function initZoom() {
     // Рўйхат панеллари (туманлар, маҳаллалар, мақсадлар …) катталашмайди; ҳавола, тугма ва жадвал қаторлари ўз ишини қилади
     viewEl.addEventListener("click", (e) => {
+      const mz = e.target.closest("[data-money]");
+      if (mz) { openMoney(mz.dataset.money); return; }
       if (e.defaultPrevented || e.target.closest("a, button, input, select, textarea, label, tr[data-href], .seg, .pane, .chips, .card--form, .login")) return;
       const card = e.target.closest(".card");
       if (card && viewEl.contains(card)) openZoom(card);

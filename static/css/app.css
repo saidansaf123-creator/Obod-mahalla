@@ -2,13 +2,13 @@
    Обод маҳалла — классик тўқ услуб, бир бетли интерфейс
    ========================================================= */
 :root {
-  --bg: #0a0a0b;
-  --side: #0e0e10;
-  --panel: #131315;
-  --panel-2: #18181b;
-  --panel-3: #1e1e22;
-  --line: #26262b;
-  --line-2: #33333a;
+  --bg: #040405;
+  --side: #08080a;
+  --panel: #17181d;
+  --panel-2: #1e1f25;
+  --panel-3: #26272e;
+  --line: #2c2d35;
+  --line-2: #3b3c46;
   --text: #e9e6df;
   --text-2: #bdb8ad;
   --muted: #8a867d;
@@ -749,3 +749,28 @@ body.is-busy { overflow: hidden; }
 .tools--inline { flex-direction: row; align-items: center; }
 .sidebar { overflow-y: auto; scrollbar-width: thin; }
 body.is-admin .side-health { display: none; }
+
+/* ---------- Карточкалар фондан аниқ ажралиб турсин ---------- */
+.card, .kpi, .pane, .side-health {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, .025), rgba(255, 255, 255, 0) 60%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04), 0 8px 24px rgba(0, 0, 0, .45);
+}
+.view { background: radial-gradient(1200px 600px at 70% -10%, rgba(34, 211, 238, .035), transparent 60%); }
+.tbl th { background: var(--panel); }
+.kpi[data-money] { cursor: zoom-in; }
+.kpi[data-money]:hover { border-color: rgba(253, 224, 71, .45); }
+.kpi[data-money] .kpi__label::after { content: " ⤢"; color: var(--money); opacity: .7; }
+.money-card .mgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; min-height: 0; overflow: auto; flex: 1; }
+.money-card .mgrid--one { grid-template-columns: minmax(0, 560px); justify-content: center; }
+.card--zoom.money-card .donut, .money-card .donut { flex: none; height: 230px; max-height: 230px; margin: 4px 0 14px; }
+.mlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mlist li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.mlist li:last-child { border-bottom: 0; }
+.mlist li span { display: flex; flex-direction: column; gap: 2px; color: var(--text); }
+.mlist li small { color: var(--muted); font-size: .76rem; }
+.mlist li b { color: var(--money); white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 960px) { .money-card .mgrid { grid-template-columns: minmax(0, 1fr); } }
+[data-money] { cursor: pointer; }
+.card[data-money]:hover { border-color: rgba(253, 224, 71, .45); }
+.city-money { border-bottom: 1px dashed rgba(253, 224, 71, .5); }
+.city-money:hover b { color: var(--money); }

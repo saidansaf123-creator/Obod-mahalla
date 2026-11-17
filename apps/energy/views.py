@@ -14,6 +14,15 @@ from .source import CATEGORIES, PLAN_FIELDS
 from .stats import FACT_MAP, fact_totals, group_by, health_status, plan_totals, summarize
 
 
+# Маблағ манбалари (дастур бўйича). «amount» — млн сўм; «usd» — млн АҚШ доллари (сўмдаги қиймати сайтда
+# жами маблағнинг қолган қисми сифатида ҳисобланади).
+FUNDING = [
+    {"key": "fund", "name": "Тошкент шаҳрини ривожлантириш жамғармаси ҳисобидан", "amount": 70000.0},
+    {"key": "fund_rt", "name": "Ўзбекистон Республикаси Тикланиш ва тараққиёт жамғармаси ҳисобидан", "usd": 8.0},
+    {"key": "rek", "name": "«Ҳудудий электр тармоқлари» АЖ ўз ҳисобидан", "amount": 44410.0},
+]
+
+
 def _r(v, d=2):
     return round(v, d) if isinstance(v, float) else v
 
@@ -166,7 +175,7 @@ def build_payload():
                     "date": e.date.isoformat(), "lv": e.lv_km, "hv": e.hv_km, "up": e.tr_upgrade, "gk": e.new_gktp,
                     "gr": e.grsh, "cost": e.cost, "note": e.note,
                     "at": timezone.localtime(e.created_at).strftime("%d.%m.%Y %H:%M")} for e in entries]
-    return {"city": city, "source": source, "categories": categories, "planFields": plan_fields, "entries": entry_items,
+    return {"city": city, "source": source, "categories": categories, "planFields": plan_fields, "entries": entry_items, "funding": FUNDING,
             "unitCosts": unit_costs(works), "districts": districts, "mahallas": mahallas, "works": work_items,
             "tps": tp_items, "goals": goal_items}
 
